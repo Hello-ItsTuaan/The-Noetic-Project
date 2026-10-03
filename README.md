@@ -105,10 +105,32 @@ Nước	Chất lỏng cần thiết cho sự sống
 
 ### GitHub Pages
 
-1. Tạo workflow của GitHub Actions.
-2. Khai báo biến `VITE_*` trong Repository Secrets hoặc Environment Variables.
-3. Cài `base` theo `VITE_BASE_PATH` trong `vite.config.ts`.
-4. Push lên `main` để build và publish `dist/`.
+1. Bật Pages ở GitHub: vào `Settings` → `Pages` → `Build and deployment` → chọn `Source: GitHub Actions`.
+2. Tạo biến trong `Settings` → `Secrets and variables` → `Actions` → tab `Variables` với tên chính xác:
+  - `VITE_APP_NAME`
+  - `VITE_STORAGE_PROVIDER`
+  - `VITE_BASE_PATH`
+  - `VITE_SUPABASE_URL`
+  - `VITE_SUPABASE_ANON_KEY` (nếu dùng Supabase, đặt ở `Secrets` thay vì `Variables`)
+3. Đặt `VITE_BASE_PATH` theo repo: ví dụ `/website-on-tap/` hoặc `/` nếu deploy ở root.
+4. Push lên `main` để workflow chạy build và deploy `dist/`.
+
+### Xử lý sự cố deploy GitHub Pages
+
+Nếu thấy lỗi như `Get Pages site failed. Error: Not Found` hoặc `Create Pages site failed. Error: Resource not accessible by integration`, nguyên nhân thường là:
+
+- Repo chưa bật `Pages` với `Source = GitHub Actions`.
+- Workflow vẫn dùng bước `actions/configure-pages` trong khi chưa có trang Pages được tạo sẵn.
+- Token mặc định không có quyền gọi GitHub Pages API cho repo.
+
+Giải pháp đúng:
+
+- Bỏ bước `actions/configure-pages` khỏi workflow.
+- Dùng đúng luồng `upload-pages-artifact` + `deploy-pages`.
+- Đảm bảo workflow có quyền `pages: write` và `id-token: write`.
+- Trong GitHub, đi tới `Settings` → `Pages` → `Build and deployment` và chọn `GitHub Actions`.
+
+Lưu ý: `VITE_BASE_PATH` được đọc từ biến môi trường trong `vite.config.ts`, vì vậy nếu site deploy dưới repo path thì phải đặt đúng value, ví dụ `/website-on-tap/`.
 
 ### Netlify / Vercel
 
