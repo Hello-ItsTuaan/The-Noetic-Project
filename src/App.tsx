@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { HashRouter, Link, Route, Routes } from 'react-router-dom'
 
 import { appConstants } from './config/constants'
@@ -7,6 +7,8 @@ import { storage } from './data'
 import type { Folder, Item, StudySet } from './data/types'
 import { parseQuizletText } from './utils/import'
 import { buildQuizQuestion, createDistractors, isAnswerCorrect } from './utils/quiz'
+import { parseSnapshot } from './utils/snapshot'
+import { shuffleItems } from './utils/shuffle'
 
 function App() {
   return (
@@ -22,6 +24,7 @@ function App() {
           </div>
           <nav className="header-actions">
             <Link to="/">{vi.folders}</Link>
+            <BackupActions />
           </nav>
         </header>
 
@@ -39,6 +42,8 @@ function App() {
 
 function DashboardPage() {
   const [folders, setFolders] = useState<Folder[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchData, setSearchData] = useState<{ query: string; results: StudySet[] } | null>(null)
   const [folderName, setFolderName] = useState('')
   const [folderIcon, setFolderIcon] = useState<string>(appConstants.defaultFolderIcon)
   const [folderColor, setFolderColor] = useState<string>(appConstants.defaultFolderColor)
@@ -47,17 +52,37 @@ function DashboardPage() {
   const [setDescription, setSetDescription] = useState('')
   const [sampleText, setSampleText] = useState<string>(vi.sampleText)
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     const nextFolders = await storage.listFolders()
     setFolders(nextFolders)
     if (!selectedFolderId && nextFolders[0]) {
       setSelectedFolderId(nextFolders[0].id)
     }
-  }
+  }, [selectedFolderId])
 
   useEffect(() => {
     void refresh()
-  }, [])
+  }, [refresh])
+
+  const query = searchQuery.trim()
+  const searchResults = searchData?.query === query ? searchData.results : []
+
+  useEffect(() => {
+    let active = true
+    if (!query) {
+      return
+    }
+
+    void storage.searchStudySets(query).then((results) => {
+      if (active) setSearchData({ query, results })
+    }).catch(() => {
+      if (active) setSearchData({ query, results: [] })
+    })
+
+    return () => {
+      active = false
+    }
+  }, [query])
 
   const createFolder = async () => {
     const name = folderName.trim() || appConstants.defaultFolderName
@@ -129,7 +154,29 @@ function DashboardPage() {
   const folderCount = folders.length
 
   return (
-    <div className="layout-grid">
+    <div className="dashboard-content">
+      <section className="panel search-panel">
+        <label htmlFor="study-set-search">Tìm bộ ôn tập</label>
+        <input
+          id="study-set-search"
+          type="search"
+          placeholder="Nhập tên hoặc mô tả bộ học…"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+        />
+        {searchQuery.trim() && (
+          <div className="search-results" aria-live="polite">
+            {searchData?.query !== query ? <p>Đang tìm bộ ôn tập…</p> : searchResults.length ? searchResults.map((set) => (
+              <Link key={set.id} to={`/sets/${set.id}`} className="search-result">
+                <span>{set.icon} {set.name}</span>
+                <small>{set.description}</small>
+              </Link>
+            )) : <p>Không tìm thấy bộ ôn tập phù hợp.</p>}
+          </div>
+        )}
+      </section>
+
+      <div className="layout-grid">
       <section className="panel panel-primary">
         <div className="section-header">
           <h2>{vi.folders}</h2>
@@ -205,6 +252,66 @@ function DashboardPage() {
           <button type="button" className="secondary-button" onClick={importSample}>{vi.importSample}</button>
         </div>
       </aside>
+      </div>
+    </div>
+  )
+}
+
+function BackupActions() {
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const exportBackup = async () => {
+    setBusy(true)
+    try {
+      const snapshot = await storage.exportSnapshot()
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `on-tap-backup-${new Date().toISOString().slice(0, 10)}.json`
+      link.click()
+      URL.revokeObjectURL(url)
+      setMessage('Đã tải bản sao lưu.')
+    } catch {
+      setMessage('Không thể tạo bản sao lưu.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const importBackup = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+    if (!window.confirm('Khôi phục sẽ thay thế toàn bộ dữ liệu hiện tại. Bạn có muốn tiếp tục?')) return
+
+    setBusy(true)
+    try {
+      const snapshot = parseSnapshot(await file.text())
+      if (!snapshot) {
+        setMessage('File không đúng định dạng bản sao lưu của ứng dụng.')
+        return
+      }
+      await storage.importSnapshot(snapshot)
+      window.location.reload()
+    } catch {
+      setMessage('Không thể khôi phục bản sao lưu.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="backup-actions">
+      <button type="button" className="header-button" onClick={() => void exportBackup()} disabled={busy}>
+        Xuất backup
+      </button>
+      <label className={`header-button file-button${busy ? ' is-disabled' : ''}`}>
+        Khôi phục
+        <input type="file" accept="application/json,.json" onChange={(event) => void importBackup(event)} disabled={busy} />
+      </label>
+      {message && <span className="backup-message" role="status">{message}</span>}
     </div>
   )
 }
@@ -214,16 +321,16 @@ function FolderDetailPage() {
   const [folder, setFolder] = useState<Folder | null>(null)
   const [sets, setSets] = useState<StudySet[]>([])
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     const nextFolder = await storage.getFolder(folderId)
     const nextSets = await storage.listStudySets(folderId)
     setFolder(nextFolder)
     setSets(nextSets)
-  }
+  }, [folderId])
 
   useEffect(() => {
     void refresh()
-  }, [folderId])
+  }, [refresh])
 
   if (!folder) {
     return <div className="panel">{vi.emptyTitle}</div>
@@ -265,19 +372,47 @@ function SetDetailPage() {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [flipped, setFlipped] = useState(false)
   const [quizResult, setQuizResult] = useState<string | null>(null)
+  const [shuffleOrder, setShuffleOrder] = useState<Item[] | null>(null)
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     const nextSet = await storage.getStudySet(setId)
     setStudySet(nextSet)
     if (nextSet) {
       const nextItems = await storage.listItems(nextSet.id)
       setItems(nextItems)
+      setShuffleOrder(null)
+      setCurrentIndex(0)
     }
-  }
+  }, [setId])
 
   useEffect(() => {
     void refresh()
-  }, [setId])
+  }, [refresh])
+
+  const displayItems = shuffleOrder ?? items
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target
+      if (target instanceof HTMLElement && (
+        target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
+      )) return
+
+      if (event.code === 'Space') {
+        event.preventDefault()
+        setFlipped((value) => !value)
+      } else if (event.key === 'ArrowRight') {
+        setCurrentIndex((value) => Math.min(displayItems.length - 1, value + 1))
+        setFlipped(false)
+      } else if (event.key === 'ArrowLeft') {
+        setCurrentIndex((value) => Math.max(0, value - 1))
+        setFlipped(false)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [displayItems.length])
 
   const addItem = async () => {
     if (!studySet || !term.trim() || !definition.trim()) return
@@ -314,7 +449,7 @@ function SetDetailPage() {
     await refresh()
   }
 
-  const currentItem = items[currentIndex] ?? null
+  const currentItem = displayItems[currentIndex] ?? null
   const quiz = useMemo(() => {
     if (!currentItem) return null
     return buildQuizQuestion(currentItem)
@@ -336,20 +471,50 @@ function SetDetailPage() {
         <Link to="/">← {vi.folders}</Link>
       </div>
 
+      <div className="study-toolbar">
+        <span>{displayItems.length} thẻ trong bộ này</span>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => {
+            setShuffleOrder((current) => current ? null : shuffleItems(items))
+            setCurrentIndex(0)
+            setFlipped(false)
+          }}
+          disabled={items.length < 2}
+        >
+          {shuffleOrder ? 'Tắt xáo trộn' : 'Xáo trộn thẻ'}
+        </button>
+      </div>
+
       <div className="study-grid">
         <section className="panel panel-primary">
           <h3>{vi.flashcards}</h3>
           {currentItem ? (
             <>
-              <div className="flashcard" onClick={() => setFlipped((value) => !value)}>
+              <div className="study-progress">
+                <span>Thẻ {currentIndex + 1} / {displayItems.length}</span>
+                <progress value={currentIndex + 1} max={displayItems.length} />
+              </div>
+              <div
+                className="flashcard"
+                role="button"
+                tabIndex={0}
+                aria-label="Lật thẻ ghi nhớ"
+                onClick={() => setFlipped((value) => !value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') setFlipped((value) => !value)
+                }}
+              >
                 <p>{flipped ? 'Định nghĩa' : 'Thuật ngữ'}</p>
                 <strong>{flipped ? (currentItem.payload as { definition: string }).definition : (currentItem.payload as { term: string }).term}</strong>
               </div>
               <div className="button-row">
                 <button type="button" className="secondary-button" onClick={() => setCurrentIndex((value) => Math.max(0, value - 1))}>{vi.previous}</button>
                 <button type="button" className="primary-button" onClick={() => setFlipped((value) => !value)}>{vi.flip}</button>
-                <button type="button" className="secondary-button" onClick={() => setCurrentIndex((value) => Math.min(items.length - 1, value + 1))}>{vi.next}</button>
+                <button type="button" className="secondary-button" onClick={() => setCurrentIndex((value) => Math.min(displayItems.length - 1, value + 1))}>{vi.next}</button>
               </div>
+              <p className="keyboard-hint">Phím tắt: ← → chuyển thẻ · Space lật thẻ</p>
             </>
           ) : (
             <div className="empty-state">{vi.noSets}</div>

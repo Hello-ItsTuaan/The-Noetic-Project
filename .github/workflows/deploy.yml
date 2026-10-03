@@ -20,16 +20,17 @@ jobs:
     env:
       VITE_APP_NAME: ${{ vars.VITE_APP_NAME || 'Website Ôn Tập' }}
       VITE_STORAGE_PROVIDER: ${{ vars.VITE_STORAGE_PROVIDER || 'local' }}
-      VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH || '/' }}
+      # Derive the project-site path automatically; set the repo variable to override it.
+      VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH || (github.event.repository.name == format('{0}.github.io', github.repository_owner) && '/' || format('/{0}/', github.event.repository.name)) }}
       VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || '' }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || '' }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -41,7 +42,7 @@ jobs:
         run: npm run build
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ./dist
 
@@ -55,4 +56,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@v5.0.1

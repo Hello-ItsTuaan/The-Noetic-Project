@@ -106,13 +106,13 @@ Nước	Chất lỏng cần thiết cho sự sống
 ### GitHub Pages
 
 1. Bật Pages ở GitHub: vào `Settings` → `Pages` → `Build and deployment` → chọn `Source: GitHub Actions`.
-2. Tạo biến trong `Settings` → `Secrets and variables` → `Actions` → tab `Variables` với tên chính xác:
+2. Tuỳ chọn: tạo biến trong `Settings` → `Secrets and variables` → `Actions` → tab `Variables` với tên chính xác:
   - `VITE_APP_NAME`
   - `VITE_STORAGE_PROVIDER`
-  - `VITE_BASE_PATH`
+  - `VITE_BASE_PATH` (nếu bỏ trống, workflow tự suy ra `/<tên-repo>/`; repo `<user>.github.io` dùng `/`)
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_ANON_KEY` (nếu dùng Supabase, đặt ở `Secrets` thay vì `Variables`)
-3. Đặt `VITE_BASE_PATH` theo repo: ví dụ `/website-on-tap/` hoặc `/` nếu deploy ở root.
+3. Nếu đặt `VITE_BASE_PATH` thủ công, dùng đường dẫn repo có dấu `/` ở hai đầu, ví dụ `/The-Noetic-Project/`. Dùng `/` cho custom domain hoặc deploy ở root.
 4. Push lên `main` để workflow chạy build và deploy `dist/`.
 
 ### Xử lý sự cố deploy GitHub Pages
@@ -130,7 +130,7 @@ Giải pháp đúng:
 - Đảm bảo workflow có quyền `pages: write` và `id-token: write`.
 - Trong GitHub, đi tới `Settings` → `Pages` → `Build and deployment` và chọn `GitHub Actions`.
 
-Lưu ý: `VITE_BASE_PATH` được đọc từ biến môi trường trong `vite.config.ts`, vì vậy nếu site deploy dưới repo path thì phải đặt đúng value, ví dụ `/website-on-tap/`.
+Nếu trang mở ra nhưng trắng, mở DevTools → `Network` và tìm request JavaScript/CSS trả về `404`. Trên GitHub Pages dạng project, nguyên nhân thường là assets được build với base `/` thay vì `/<tên-repo>/`. Workflow hiện tự suy ra base path theo tên repo; nếu cần custom domain hoặc đường dẫn khác, đặt `VITE_BASE_PATH` thủ công. `vite.config.ts` đọc giá trị này khi build.
 
 ### Netlify / Vercel
 

@@ -39,4 +39,26 @@ describe('LocalAdapter contract', () => {
     const updated = await adapter.updateStudySet(set.id, { name: 'Sinh học nâng cao' })
     expect(updated.name).toBe('Sinh học nâng cao')
   })
+
+  it('searches study sets by name and description without matching deleted records', async () => {
+    const folder = await adapter.createFolder({
+      name: 'KHTN',
+      color: '#22c55e',
+      icon: '🧪',
+      ownerId: null,
+    })
+    const set = await adapter.createStudySet({
+      folderId: folder.id,
+      name: 'Sinh học',
+      description: 'Tế bào và di truyền',
+      color: '#8b5cf6',
+      icon: '📘',
+      ownerId: null,
+      itemIds: [],
+    })
+
+    expect(await adapter.searchStudySets('DI TRUYỀN')).toHaveLength(1)
+    await adapter.deleteStudySet(set.id)
+    expect(await adapter.searchStudySets('Sinh học')).toHaveLength(0)
+  })
 })
